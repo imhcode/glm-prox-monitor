@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>glm-overflow</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="root">
+      <!-- Pill bar: selalu tampil di top layar -->
+      <div id="pill" title="Klik untuk detail">
+        <span id="pill-chip">GLM</span>
+        <div id="pill-bar"><div id="pill-fill"></div></div>
+        <span id="pill-pct">…</span>
+        <span id="pill-tok"></span>
+        <span id="pill-reset"></span>
+      </div>
+
+      <!-- Panel detail: muncul saat pill diklik -->
+      <div id="panel" class="hidden">
+        <div class="panel-head">
+          <span id="panel-title">Detail Langganan</span>
+          <div class="panel-head-actions">
+            <button id="btn-refresh" class="btn-mini" title="Refresh sekarang">↻</button>
+            <button id="btn-collapse" class="btn-mini" title="Tutup (Esc)">✕</button>
+          </div>
+        </div>
+        <div id="panel-rows"></div>
+        <div id="panel-status"></div>
+
+        <details id="settings">
+          <summary>⚙ Settings</summary>
+          <div class="settings-body">
+            <label>
+              <span>API Token</span>
+              <input id="cfg-token" type="password" autocomplete="off" spellcheck="false" />
+            </label>
+            <label>
+              <span>Base URL</span>
+              <input id="cfg-base-url" type="text" spellcheck="false" />
+            </label>
+            <label>
+              <span>Interval refresh (detik)</span>
+              <input id="cfg-interval" type="number" min="10" max="3600" step="10" />
+            </label>
+            <div class="settings-row">
+              <button id="btn-save" class="btn">Simpan</button>
+              <span id="save-status"></span>
+            </div>
+          </div>
+        </details>
+
+        <div class="panel-actions">
+          <button id="btn-hide" class="btn">Sembunyikan bar</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permission default untuk window bar glm-overflow",
+  "windows": ["bar"],
+  "permissions": ["core:default"]
+}
