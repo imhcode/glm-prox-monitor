@@ -4,6 +4,29 @@ Bar stat pemakaian langganan GLM coding plan — pill overlay kecil yang selalu 
 di kanan-atas layar (always-on-top, tanpa taskbar) + tray icon. Dibangun dengan
 **Tauri 2** (Rust backend, UI vanilla TS/CSS, binary ringan).
 
+## Download
+
+Ambil installer dari [**Releases**](https://github.com/imhcode/glm-prox-monitor/releases/latest):
+
+| Platform | File |
+| --- | --- |
+| Windows | `glm-overflow_0.2.0_x64-setup.exe` (NSIS, instalasi per-user) |
+| Linux (Debian/Ubuntu) | `glm-overflow_0.2.0_amd64.deb` |
+| Linux (universal) | `glm-overflow_0.2.0_amd64.AppImage` |
+
+> Installer belum di-code-sign → SmartScreen/antivirus bisa menampilkan peringatan
+> pertama kali dijalankan. Data pada screenshot di bawah adalah data dummy.
+
+## Screenshot
+
+**Pill bar** — selalu tampil di kanan-atas layar:
+
+![Pill bar glm-overflow](docs/screenshot-bar.png)
+
+**Panel detail** — klik pill untuk melihat rincian langganan:
+
+![Panel detail glm-overflow](docs/screenshot-panel.png)
+
 ## Fitur
 
 - **Pill bar**: progress pemakaian window 5 jam, **% sisa**, **sisa token**, dan countdown reset.
@@ -43,14 +66,15 @@ npm run tauri build    # produksi + installer
 
 Hasil build:
 
-- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.1.0_x64-setup.exe`
+- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.2.0_x64-setup.exe`
 - Linux: `bundle/deb/*.deb` dan `bundle/appimage/*.AppImage`
 
 ## Release CI
 
-Push tag `v*` (mis. `git tag v0.1.0 && git push origin v0.1.0`) → GitHub Actions
-(`.github/workflows/release.yml`) membangun installer Windows + Linux dan melampirkan
-ke GitHub Release (draft).
+Push tag `v*` (mis. `git tag v0.2.0 && git push origin v0.2.0`) → GitHub Actions
+(`.github/workflows/release.yml`) membangun installer Windows + Linux dan
+mem-publish-nya langsung sebagai GitHub Release (lengkap dengan release notes
+otomatis).
 
 ## Catatan keamanan
 
