@@ -12,6 +12,24 @@ pub struct Config {
     pub token: String,
     pub interval_secs: u64,
     pub bar_visible: bool,
+    /// Posisi bar hasil drag (logical coords); None = default kanan-atas.
+    pub bar_x: Option<f64>,
+    pub bar_y: Option<f64>,
+    /// Mode compact: pill kecil tanpa garis progress.
+    pub compact: bool,
+    /// dark | light | midnight | oled
+    pub theme: String,
+}
+
+pub const THEMES: [&str; 4] = ["dark", "light", "midnight", "oled"];
+
+pub fn normalize_theme(theme: &str) -> String {
+    let t = theme.trim().to_lowercase();
+    if THEMES.contains(&t.as_str()) {
+        t
+    } else {
+        "dark".to_string()
+    }
 }
 
 impl Default for Config {
@@ -28,6 +46,10 @@ impl Default for Config {
             token,
             interval_secs: 60,
             bar_visible: true,
+            bar_x: None,
+            bar_y: None,
+            compact: false,
+            theme: "dark".to_string(),
         }
     }
 }

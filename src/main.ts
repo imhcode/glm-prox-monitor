@@ -37,6 +37,10 @@ interface Config {
   token: string;
   interval_secs: number;
   bar_visible: boolean;
+  bar_x?: number | null;
+  bar_y?: number | null;
+  compact: boolean;
+  theme: string;
 }
 
 // ---------- Helpers ----------
@@ -99,7 +103,6 @@ function fmtCountdown(ms: number): string {
 
 let snapshot: Snapshot | null = null;
 let config: Config | null = null;
-let expanded = false;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -122,6 +125,16 @@ function usageInfo(stats: Stats): { usedPct: number; remainingPct: number } | nu
   if (!(limit > 0) || !isFinite(limit) || !isFinite(used)) return null;
   const usedPct = (used / limit) * 100;
   return { usedPct, remainingPct: 100 - usedPct };
+}
+
+// ---------- Theme & compact ----------
+
+const THEMES = ["dark", "light", "midnight", "oled"];
+
+function applyBodyClasses() {
+  const theme = config && THEMES.includes(config.theme) ? config.theme : "dark";
+  THEMES.forEach((t) => document.body.classList.toggle(`theme-${t}`, t === theme));
+  document.body.classList.toggle("compact", !!config?.compact);
 }
 
 function renderPill() {
@@ -157,7 +170,8 @@ function renderPillInner() {
     const info = usageInfo(stats);
     if (info) {
       pillFill.style.width = `${Math.min(100, Math.max(0, info.usedPct))}%`;
-      pillPct.textContent = `${info.remainingPct.toFixed(0)}% sisa`;
+      const suffix = document.body.classList.contains("compact") ? "" : " sisa";
+      pillPct.textContent = `${info.remainingPct.toFixed(0)}%${suffix}`;
       if (info.remainingPct < 5) pill.classList.add("crit");
       else if (info.remainingPct < 20) pill.classList.add("warn");
       pillTok.textContent = `${fmtTok(stats.current_usage!.remaining_tokens)} tok`;
@@ -279,7 +293,11 @@ function renderAll() {
   renderPanel();
 }
 
-// ---------- Window expand/collapse ----------
+// ---------- Window expand/collapse & drag ----------
+
+let expanded = false;
+let pillDownAt: { x: number; y: number } | null = null;
+let pillDragging = false;
 
 async function setExpanded(v: boolean) {
   expanded = v;
@@ -291,7 +309,38 @@ async function setExpanded(v: boolean) {
   }
 }
 
-pill.addEventListener("click", () => setExpanded(!expanded));
+pill.addEventListener("mousedown", (e) => {
+  pillDownAt = { x: e.clientX, y: e.clientY };
+  pillDragging = false;
+});
+
+pill.addEventListener("mousemove", (e) => {
+  if (!pillDownAt || pillDragging) return;
+  if (
+    Math.abs(e.clientX - pillDownAt.x) > 6 ||
+    Math.abs(e.clientY - pillDownAt.y) > 6
+  ) {
+    pillDragging = true;
+    invoke("start_bar_drag").catch((err) => console.error("start_bar_drag failed", err));
+  }
+});
+
+pill.addEventListener("click", (e) => {
+  // Gerakan > 6px berarti drag posisi, bukan klik — jangan expand.
+  if (
+    pillDragging ||
+    (pillDownAt &&
+      (Math.abs(e.clientX - pillDownAt.x) > 6 || Math.abs(e.clientY - pillDownAt.y) > 6))
+  ) {
+    return;
+  }
+  setExpanded(!expanded);
+});
+
+document.addEventListener("mouseup", () => {
+  pillDownAt = null;
+  pillDragging = false;
+});
 $("btn-collapse").addEventListener("click", () => setExpanded(false));
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && expanded) setExpanded(false);
@@ -322,6 +371,9 @@ function loadSettingsForm() {
   ($("cfg-token") as HTMLInputElement).value = config.token;
   ($("cfg-base-url") as HTMLInputElement).value = config.base_url;
   ($("cfg-interval") as HTMLInputElement).value = String(config.interval_secs);
+  ($("cfg-theme") as HTMLSelectElement).value =
+    config.theme && THEMES.includes(config.theme) ? config.theme : "dark";
+  ($("cfg-compact") as HTMLInputElement).checked = !!config.compact;
 }
 
 $("btn-save").addEventListener("click", async () => {
@@ -330,11 +382,15 @@ $("btn-save").addEventListener("click", async () => {
     token: ($("cfg-token") as HTMLInputElement).value.trim(),
     base_url: ($("cfg-base-url") as HTMLInputElement).value.trim(),
     interval_secs: Number(($("cfg-interval") as HTMLInputElement).value) || 60,
+    theme: ($("cfg-theme") as HTMLSelectElement).value,
+    compact: ($("cfg-compact") as HTMLInputElement).checked,
     bar_visible: config?.bar_visible ?? true,
   };
   try {
     await invoke("save_config", { newConfig });
     config = newConfig;
+    applyBodyClasses();
+    await setExpanded(expanded); // resink ukuran window (compact <-> normal)
     status.textContent = "Tersimpan ✓";
     panelStatus.textContent = "Konfigurasi disimpan, data disegarkan.";
     setTimeout(() => (status.textContent = ""), 2500);
@@ -356,6 +412,14 @@ listen("ui://open-settings", () => {
   loadSettingsForm();
 });
 
+// Config berubah dari tray (compact/theme) atau save_config — sinkronkan UI.
+listen<Config>("ui://config", (ev) => {
+  config = ev.payload;
+  applyBodyClasses();
+  loadSettingsForm();
+  void setExpanded(expanded); // resink ukuran window dengan mode aktif
+});
+
 // ---------- Init ----------
 
 async function init() {
@@ -366,6 +430,7 @@ async function init() {
   } catch (e) {
     console.error("get_state failed", e);
   }
+  applyBodyClasses();
   loadSettingsForm();
   renderAll();
 

@@ -1,6 +1,6 @@
 [package]
 name = "glm-overflow"
-version = "0.1.0"
+version = "0.2.0"
 description = "GLM coding plan usage bar — pill overlay + tray untuk Windows & Linux"
 edition = "2021"
 rust-version = "1.77"

@@ -1,7 +1,7 @@
-//! Tray icon + menu: Show/Hide Bar, Refresh Now, Settings, Quit.
+//! Tray icon + menu: Show/Hide, Refresh, Compact, Theme, Reset Posisi, Settings, Quit.
 
 use std::sync::Arc;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager};
 
@@ -10,12 +10,45 @@ use crate::AppState;
 
 const TRAY_ID: &str = "glm-overflow-tray";
 
-pub fn create(app: &App) -> tauri::Result<()> {
+/// Handle item tray ber-state — dipakai untuk sinkron tanda centang.
+pub struct TrayItems {
+    pub compact: CheckMenuItem<tauri::Wry>,
+    pub theme_dark: CheckMenuItem<tauri::Wry>,
+    pub theme_light: CheckMenuItem<tauri::Wry>,
+    pub theme_midnight: CheckMenuItem<tauri::Wry>,
+    pub theme_oled: CheckMenuItem<tauri::Wry>,
+}
+
+pub fn create(app: &App) -> tauri::Result<TrayItems> {
     let toggle = MenuItem::with_id(app, "toggle", "Show / Hide Bar", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh Now", true, None::<&str>)?;
+
+    let compact = CheckMenuItem::with_id(
+        app, "compact", "Mode Compact (tanpa garis)", true, false, None::<&str>,
+    )?;
+
+    let theme_dark = CheckMenuItem::with_id(app, "theme-dark", "Dark", true, true, None::<&str>)?;
+    let theme_light =
+        CheckMenuItem::with_id(app, "theme-light", "Light", true, false, None::<&str>)?;
+    let theme_midnight =
+        CheckMenuItem::with_id(app, "theme-midnight", "Midnight", true, false, None::<&str>)?;
+    let theme_oled =
+        CheckMenuItem::with_id(app, "theme-oled", "OLED Black", true, false, None::<&str>)?;
+    let theme_menu = Submenu::with_items(
+        app,
+        "Theme",
+        true,
+        &[&theme_dark, &theme_light, &theme_midnight, &theme_oled],
+    )?;
+
+    let reset_pos = MenuItem::with_id(app, "reset-pos", "Reset Posisi Bar", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit glm-overflow", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&toggle, &refresh, &settings, &quit])?;
+
+    let menu = Menu::with_items(
+        app,
+        &[&toggle, &refresh, &compact, &theme_menu, &reset_pos, &settings, &quit],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -38,7 +71,14 @@ pub fn create(app: &App) -> tauri::Result<()> {
     }
 
     builder.build(app)?;
-    Ok(())
+
+    Ok(TrayItems {
+        compact,
+        theme_dark,
+        theme_light,
+        theme_midnight,
+        theme_oled,
+    })
 }
 
 fn menu_action(app: &AppHandle, id: &str) {
@@ -49,6 +89,44 @@ fn menu_action(app: &AppHandle, id: &str) {
             let handle = app.clone();
             tauri::async_runtime::spawn(async move {
                 crate::update_and_emit(&handle, &st).await;
+            });
+        }
+        "compact" => {
+            // CheckMenuItem sudah mengubah state centangnya sendiri saat diklik.
+            let st = app.state::<Arc<AppState>>().inner().clone();
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let new_val = {
+                    let guard = st.tray_items.lock().unwrap();
+                    guard
+                        .as_ref()
+                        .and_then(|i| i.compact.is_checked().ok())
+                        .unwrap_or(false)
+                };
+                st.config.write().await.compact = new_val;
+                let cfg = st.config.read().await.clone();
+                let _ = crate::config::save(&cfg);
+                let _ = handle.emit("ui://config", &cfg);
+                sync_checks(&handle, &st).await;
+            });
+        }
+        "theme-dark" | "theme-light" | "theme-midnight" | "theme-oled" => {
+            let theme = id.trim_start_matches("theme-").to_string();
+            let st = app.state::<Arc<AppState>>().inner().clone();
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                st.config.write().await.theme = crate::config::normalize_theme(&theme);
+                let cfg = st.config.read().await.clone();
+                let _ = crate::config::save(&cfg);
+                let _ = handle.emit("ui://config", &cfg);
+                sync_checks(&handle, &st).await;
+            });
+        }
+        "reset-pos" => {
+            let st = app.state::<Arc<AppState>>().inner().clone();
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::reset_position(&handle, &st).await;
             });
         }
         "settings" => {
@@ -75,6 +153,18 @@ fn toggle_bar(app: &AppHandle) {
         }
         crate::apply_bar_visibility(&handle, &st).await;
     });
+}
+
+/// Samakan tanda centang menu dengan config aktif.
+pub async fn sync_checks(_app: &AppHandle, state: &Arc<AppState>) {
+    let cfg = state.config.read().await.clone();
+    let guard = state.tray_items.lock().unwrap();
+    let Some(items) = guard.as_ref() else { return };
+    let _ = items.compact.set_checked(cfg.compact);
+    let _ = items.theme_dark.set_checked(cfg.theme == "dark");
+    let _ = items.theme_light.set_checked(cfg.theme == "light");
+    let _ = items.theme_midnight.set_checked(cfg.theme == "midnight");
+    let _ = items.theme_oled.set_checked(cfg.theme == "oled");
 }
 
 pub async fn update_tooltip(app: &AppHandle, state: &Arc<AppState>) {

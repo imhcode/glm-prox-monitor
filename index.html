@@ -8,8 +8,8 @@
   </head>
   <body>
     <div id="root">
-      <!-- Pill bar: selalu tampil di top layar -->
-      <div id="pill" title="Klik untuk detail">
+      <!-- Pill bar: selalu tampil di top layar; bisa didrag -->
+      <div id="pill" data-tauri-drag-region title="Klik: detail · Drag: pindahkan">
         <span id="pill-chip">GLM</span>
         <div id="pill-bar"><div id="pill-fill"></div></div>
         <span id="pill-pct">…</span>
@@ -43,6 +43,19 @@
             <label>
               <span>Interval refresh (detik)</span>
               <input id="cfg-interval" type="number" min="10" max="3600" step="10" />
+            </label>
+            <label>
+              <span>Theme</span>
+              <select id="cfg-theme">
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+                <option value="midnight">Midnight</option>
+                <option value="oled">OLED Black</option>
+              </select>
+            </label>
+            <label class="check-row">
+              <input id="cfg-compact" type="checkbox" />
+              <span>Mode compact (pill kecil tanpa garis)</span>
             </label>
             <div class="settings-row">
               <button id="btn-save" class="btn">Simpan</button>

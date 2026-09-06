@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Pre-commit hook: blokir commit yang mengandung pola kredensial.
+# Aktif via: git config core.hooksPath .githooks
+PATTERNS='glm_[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+
+if git diff --cached -U0 | grep -E "$PATTERNS" >/dev/null 2>&1; then
+  echo "✖ Pre-commit: pola kredensial terdeteksi di staged changes:" >&2
+  git diff --cached -U0 | grep -nE "$PATTERNS" | head -5 >&2
+  echo "  Commit dibatalkan. Perbaiki file, atau --no-verify jika benar-benar aman." >&2
+  exit 1
+fi
+exit 0

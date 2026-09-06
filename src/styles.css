@@ -10,29 +10,96 @@ body {
   overflow: hidden;
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size: 13px;
-  color: #e6e9f0;
+  color: var(--text);
   user-select: none;
   -webkit-user-select: none;
 }
 
+/* ---------- Theme variables ---------- */
+
+body.theme-dark {
+  --bg: rgba(16, 19, 28, 0.94);
+  --panel-bg: rgba(14, 17, 25, 0.97);
+  --border: rgba(255, 255, 255, 0.09);
+  --text: #e6e9f0;
+  --text-dim: #8b94a8;
+  --chip-fg: #0f172a;
+  --track: rgba(255, 255, 255, 0.12);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.14);
+  --btn-bg: rgba(255, 255, 255, 0.07);
+  --btn-bg-hover: rgba(255, 255, 255, 0.14);
+}
+
+body.theme-light {
+  --bg: rgba(248, 250, 252, 0.96);
+  --panel-bg: rgba(255, 255, 255, 0.98);
+  --border: rgba(15, 23, 42, 0.14);
+  --text: #0f172a;
+  --text-dim: #64748b;
+  --chip-fg: #f8fafc;
+  --track: rgba(15, 23, 42, 0.14);
+  --input-bg: rgba(15, 23, 42, 0.04);
+  --input-border: rgba(15, 23, 42, 0.22);
+  --btn-bg: rgba(15, 23, 42, 0.06);
+  --btn-bg-hover: rgba(15, 23, 42, 0.12);
+}
+
+body.theme-midnight {
+  --bg: rgba(9, 12, 28, 0.95);
+  --panel-bg: rgba(11, 15, 36, 0.97);
+  --border: rgba(129, 140, 248, 0.22);
+  --text: #dcdfff;
+  --text-dim: #8a90c2;
+  --chip-fg: #10132b;
+  --track: rgba(129, 140, 248, 0.2);
+  --input-bg: rgba(129, 140, 248, 0.08);
+  --input-border: rgba(129, 140, 248, 0.3);
+  --btn-bg: rgba(129, 140, 248, 0.12);
+  --btn-bg-hover: rgba(129, 140, 248, 0.22);
+}
+
+body.theme-oled {
+  --bg: rgba(0, 0, 0, 0.95);
+  --panel-bg: rgba(5, 5, 5, 0.97);
+  --border: rgba(255, 255, 255, 0.16);
+  --text: #f2f2f2;
+  --text-dim: #9b9b9b;
+  --chip-fg: #000000;
+  --track: rgba(255, 255, 255, 0.14);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.2);
+  --btn-bg: rgba(255, 255, 255, 0.08);
+  --btn-bg-hover: rgba(255, 255, 255, 0.16);
+}
+
 #root {
-  width: 460px;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---------- Pill bar ---------- */
 
 #pill {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
   height: 46px;
   padding: 0 14px;
   border-radius: 23px;
-  background: rgba(16, 19, 28, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: var(--bg);
+  border: 1px solid var(--border);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
-  cursor: pointer;
+  cursor: default;
   backdrop-filter: blur(10px);
+}
+
+/* Semua anak pill non-interaktif supaya drag region mengenai #pill */
+#pill > * {
+  pointer-events: none;
 }
 
 #pill-chip {
@@ -40,7 +107,7 @@ body {
   font-weight: 700;
   font-size: 12px;
   letter-spacing: 0.04em;
-  color: #0f172a;
+  color: var(--chip-fg);
   background: linear-gradient(135deg, #4ade80, #22d3ee);
   border-radius: 999px;
   padding: 3px 9px;
@@ -50,7 +117,7 @@ body {
   flex: 1 1 auto;
   height: 8px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--track);
   overflow: hidden;
 }
 
@@ -72,7 +139,7 @@ body {
 }
 
 #pill.offline #pill-fill {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--track);
 }
 
 #pill-pct {
@@ -85,13 +152,13 @@ body {
 
 #pill-tok {
   flex: 0 0 auto;
-  color: #9aa4b8;
+  color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
 
 #pill-reset {
   flex: 0 0 auto;
-  color: #8b94a8;
+  color: var(--text-dim);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -99,18 +166,56 @@ body {
 #pill.warn #pill-pct { color: #fbbf24; }
 #pill.crit #pill-pct,
 #pill.limited #pill-pct { color: #f87171; }
-#pill.offline #pill-pct { color: #9aa4b8; }
+#pill.offline #pill-pct { color: var(--text-dim); }
+
+/* ---------- Mode compact ---------- */
+
+body.compact #pill {
+  height: 32px;
+  border-radius: 16px;
+  padding: 0 10px;
+  gap: 8px;
+}
+
+body.compact #pill-bar {
+  display: none;
+}
+
+body.compact #pill-chip {
+  font-size: 10px;
+  padding: 2px 7px;
+}
+
+body.compact #pill-pct {
+  min-width: 0;
+}
+
+body.compact #pill-reset {
+  font-size: 10.5px;
+}
 
 /* ---------- Panel detail ---------- */
 
 #panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   margin-top: 6px;
   border-radius: 14px;
-  background: rgba(14, 17, 25, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5);
   padding: 12px 14px 14px;
   backdrop-filter: blur(12px);
+}
+
+#panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+#panel::-webkit-scrollbar-thumb {
+  background: var(--track);
+  border-radius: 3px;
 }
 
 .hidden {
@@ -138,16 +243,16 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: #e6e9f0;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  color: var(--text);
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
 }
 
 .btn-mini:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--btn-bg-hover);
 }
 
 #panel-rows {
@@ -159,7 +264,7 @@ body {
 }
 
 .row-label {
-  color: #8b94a8;
+  color: var(--text-dim);
 }
 
 .row-value {
@@ -170,25 +275,26 @@ body {
 .row-value.ok { color: #4ade80; }
 .row-value.warn { color: #fbbf24; }
 .row-value.crit { color: #f87171; }
-.row-value.dim { color: #9aa4b8; }
+.row-value.dim { color: var(--text-dim); }
 
 #panel-status {
   margin-top: 10px;
   font-size: 11.5px;
-  color: #8b94a8;
+  color: var(--text-dim);
 }
 
 /* ---------- Settings ---------- */
 
 #settings {
   margin-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border);
   padding-top: 10px;
 }
 
 #settings summary {
   cursor: pointer;
-  color: #b9c1d1;
+  color: var(--text);
+  opacity: 0.75;
   font-size: 12.5px;
   outline: none;
 }
@@ -205,21 +311,38 @@ body {
   flex-direction: column;
   gap: 4px;
   font-size: 11.5px;
-  color: #8b94a8;
+  color: var(--text-dim);
 }
 
-.settings-body input {
+.settings-body label.check-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.settings-body label.check-row input {
+  width: auto;
+  height: auto;
+  accent-color: #4ade80;
+}
+
+.settings-body input,
+.settings-body select {
   height: 30px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: #e6e9f0;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
   padding: 0 10px;
   font-size: 12.5px;
   outline: none;
+  font-family: inherit;
 }
 
-.settings-body input:focus {
+.settings-body input:focus,
+.settings-body select:focus {
   border-color: rgba(74, 222, 128, 0.6);
 }
 
@@ -240,15 +363,15 @@ body {
   height: 30px;
   padding: 0 14px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.07);
-  color: #e6e9f0;
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  color: var(--text);
   cursor: pointer;
   font-size: 12.5px;
 }
 
 .btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--btn-bg-hover);
 }
 
 .panel-actions {

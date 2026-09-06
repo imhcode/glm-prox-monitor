@@ -1,0 +1,16 @@
+# Konfigurasi gitleaks untuk glm-prox-monitor.
+# Default rules + rule khusus token GLM.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "glm-api-token"
+description = "GLM API token"
+regex = '''glm_[A-Za-z0-9]{20,}'''
+tags = ["token", "glm"]
+
+[allowlist]
+description = "Contoh key ter-masker di dokumentasi"
+regexes = [
+  '''glm_\.\.\.''',
+]
