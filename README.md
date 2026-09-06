@@ -10,9 +10,9 @@ Ambil installer dari [**Releases**](https://github.com/imhcode/glm-prox-monitor/
 
 | Platform | File |
 | --- | --- |
-| Windows | `glm-overflow_0.2.0_x64-setup.exe` (NSIS, instalasi per-user) |
-| Linux (Debian/Ubuntu) | `glm-overflow_0.2.0_amd64.deb` |
-| Linux (universal) | `glm-overflow_0.2.0_amd64.AppImage` |
+| Windows | `glm-overflow_0.2.1_x64-setup.exe` (NSIS, instalasi per-user) |
+| Linux (Debian/Ubuntu) | `glm-overflow_0.2.1_amd64.deb` |
+| Linux (universal) | `glm-overflow_0.2.1_amd64.AppImage` |
 
 > Installer belum di-code-sign → SmartScreen/antivirus bisa menampilkan peringatan
 > pertama kali dijalankan. Data pada screenshot di bawah adalah data dummy.
@@ -42,6 +42,25 @@ Ambil installer dari [**Releases**](https://github.com/imhcode/glm-prox-monitor/
   - Windows: `%APPDATA%\glm-overflow\config.json`
   - Linux: `~/.config/glm-overflow/config.json`
 
+## Linux & always-on-top
+
+Agar pill selalu tampil di atas window lain (fitur utama app ini), glm-overflow
+menangani Linux secara khusus:
+
+- **Sesi X11** (default di kebanyakan distro): app memanggil ulang `keep-above`
+  secara otomatis — saat startup (beberapa retry setelah window di-map), saat
+  show/hide dari tray, saat panel di-expand, saat fokus berubah, setelah drag
+  selesai, plus watchdog tiap 20 detik. Sebagian window manager memang mengabaikan
+  atau menjatuhkan state keep-above, dan ini menutup celah tersebut.
+- **Sesi Wayland** (GNOME/KDE Wayland): protokol Wayland **tidak punya** mekanisme
+  keep-above untuk window biasa, jadi app otomatis berjalan lewat **XWayland**
+  (`GDK_BACKEND=x11`) agar keep-above tetap dihormati window manager.
+  Efek samping: pada skala fraksional (125%/150%) teks bisa sedikit kurang tajam
+  dibanding Wayland native.
+  - Opt-out (paksa Wayland native): `GLM_OVERFLOW_ALLOW_WAYLAND=1 glm-overflow`
+    — tapi native Wayland umumnya **tidak bisa** always-on-top. Alternatif di KDE:
+    pasang Window Rule *Keep above* untuk window `glm-overflow`.
+
 ## Endpoint
 
 `GET {base_url}/stats` dengan header `Authorization: Bearer <token>`.
@@ -66,12 +85,12 @@ npm run tauri build    # produksi + installer
 
 Hasil build:
 
-- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.2.0_x64-setup.exe`
+- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.2.1_x64-setup.exe`
 - Linux: `bundle/deb/*.deb` dan `bundle/appimage/*.AppImage`
 
 ## Release CI
 
-Push tag `v*` (mis. `git tag v0.2.0 && git push origin v0.2.0`) → GitHub Actions
+Push tag `v*` (mis. `git tag v0.2.1 && git push origin v0.2.1`) → GitHub Actions
 (`.github/workflows/release.yml`) membangun installer Windows + Linux dan
 mem-publish-nya langsung sebagai GitHub Release (lengkap dengan release notes
 otomatis).

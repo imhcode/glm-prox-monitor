@@ -59,6 +59,54 @@ fn apply_initial_position(win: &tauri::WebviewWindow, cfg: &config::Config) {
     }
 }
 
+/// Re-assert always-on-top (Linux only). Di Windows/macOS config `alwaysOnTop`
+/// sudah stabil; di Linux GTK/WM bisa mengabaikan atau menjatuhkan state
+/// keep-above saat window di-map, di-show ulang, atau di-resize.
+fn keep_above(win: &tauri::WebviewWindow) {
+    #[cfg(target_os = "linux")]
+    if let Err(e) = win.set_always_on_top(true) {
+        eprintln!("glm-overflow: set_always_on_top gagal: {e}");
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = win;
+}
+
+/// Di Wayland native tidak ada protokol keep-above untuk window biasa — GTK
+/// mengabaikan set_keep_above diam-diam, jadi bar tak bisa selalu di atas.
+/// Solusi: jalankan via XWayland (GDK_BACKEND=x11) yang tetap dihormati WM
+/// (GNOME/KDE/XFCE/Cinnamon/dll). Opt-out: GLM_OVERFLOW_ALLOW_WAYLAND=1.
+/// Harus dipanggil sebelum GTK/tauri init (dari main(), pre-thread).
+#[cfg(target_os = "linux")]
+fn prepare_linux_backend() {
+    let env_flag = |k: &str| std::env::var(k).map(|v| !v.trim().is_empty()).unwrap_or(false);
+    let on_wayland = env_flag("WAYLAND_DISPLAY")
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|v| v.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false);
+    if !on_wayland {
+        return;
+    }
+    if env_flag("GLM_OVERFLOW_ALLOW_WAYLAND") {
+        eprintln!(
+            "glm-overflow: Wayland native dipaksa aktif — WM umumnya TIDAK mengizinkan always-on-top. \
+             Alternatif KDE: Window Rule 'Keep above'."
+        );
+        return;
+    }
+    if !env_flag("DISPLAY") {
+        eprintln!(
+            "glm-overflow: sesi Wayland tanpa XWayland (DISPLAY kosong) — \
+             always-on-top mungkin tidak jalan."
+        );
+        return;
+    }
+    std::env::set_var("GDK_BACKEND", "x11");
+    eprintln!(
+        "glm-overflow: sesi Wayland terdeteksi — pakai XWayland agar always-on-top jalan \
+         (opt-out: GLM_OVERFLOW_ALLOW_WAYLAND=1)"
+    );
+}
+
 async fn apply_bar_visibility(app: &AppHandle, state: &Arc<AppState>) {
     let visible = state.config.read().await.bar_visible;
     if let Some(win) = app.get_webview_window("bar") {
@@ -67,6 +115,7 @@ async fn apply_bar_visibility(app: &AppHandle, state: &Arc<AppState>) {
             apply_initial_position(&win, &cfg);
             drop(cfg);
             let _ = win.show();
+            keep_above(&win);
         } else {
             let _ = win.hide();
         }
@@ -157,7 +206,9 @@ async fn set_expanded(
     } else {
         collapsed_size(compact)
     };
-    window.set_size(size).map_err(|e| e.to_string())
+    window.set_size(size).map_err(|e| e.to_string())?;
+    keep_above(&window);
+    Ok(())
 }
 
 #[tauri::command]
@@ -203,6 +254,9 @@ async fn hide_bar(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(),
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    prepare_linux_backend();
+
     let cfg0 = config::load();
     let state = Arc::new(AppState {
         config: RwLock::new(cfg0.clone()),
@@ -231,6 +285,37 @@ fn main() {
 
             if let Some(win) = app.get_webview_window("bar") {
                 apply_initial_position(&win, &cfg0);
+                keep_above(&win);
+
+                // Beberapa WM X11 mengabaikan hint keep-above yang diset
+                // sebelum window di-map — ulangi beberapa kali setelahnya.
+                let retries = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    for ms in [300u64, 1_000, 3_000] {
+                        tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                        if let Some(win) = retries.get_webview_window("bar") {
+                            keep_above(&win);
+                        }
+                    }
+                });
+            }
+
+            // Watchdog: kalau WM menjatuhkan state keep-above di tengah jalan,
+            // kembalikan tiap 20 detik. Di X11 ini kirim ulang request EWMH
+            // _NET_WM_STATE ADD; WM no-op kalau memang sudah di atas.
+            #[cfg(target_os = "linux")]
+            {
+                let watchdog = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                        if let Some(win) = watchdog.get_webview_window("bar") {
+                            if win.is_visible().unwrap_or(false) {
+                                keep_above(&win);
+                            }
+                        }
+                    }
+                });
             }
 
             // Poller: fetch pertama, lalu berulang sesuai interval config.
@@ -261,6 +346,8 @@ fn main() {
                 let logical = (pos.x as f64 / scale, pos.y as f64 / scale);
                 *st.pending_pos.lock().unwrap() = Some(logical);
                 let gen = st.pos_gen.fetch_add(1, Ordering::SeqCst) + 1;
+                #[cfg(target_os = "linux")]
+                let app_linux = app.clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
                     if st.pos_gen.load(Ordering::SeqCst) == gen {
@@ -274,8 +361,22 @@ fn main() {
                                 eprintln!("glm-overflow: gagal simpan posisi: {e}");
                             }
                         }
+                        // Drag selesai — sebagian WM menjatuhkan keep-above saat move.
+                        #[cfg(target_os = "linux")]
+                        if let Some(win) = app_linux.get_webview_window("bar") {
+                            keep_above(&win);
+                        }
                     }
                 });
+            }
+            // Kalau WM menjatuhkan keep-above, pulihkan begitu fokus bar berubah.
+            #[cfg(target_os = "linux")]
+            if let WindowEvent::Focused(_) = event {
+                if window.label() == "bar" {
+                    if let Some(win) = window.app_handle().get_webview_window("bar") {
+                        keep_above(&win);
+                    }
+                }
             }
         })
         .run(tauri::generate_context!())
