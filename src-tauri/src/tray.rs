@@ -1,11 +1,11 @@
-//! Tray icon + menu: Show/Hide, Refresh, Compact, Theme, Reset Posisi, Settings, Quit.
+//! Tray icon + menu: Show/Hide, Refresh, Compact, Provider, Theme, Reset Posisi, Settings, Quit.
 
 use std::sync::Arc;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager};
 
-use crate::api;
+use crate::providers;
 use crate::AppState;
 
 const TRAY_ID: &str = "glm-overflow-tray";
@@ -13,6 +13,8 @@ const TRAY_ID: &str = "glm-overflow-tray";
 /// Handle item tray ber-state — dipakai untuk sinkron tanda centang.
 pub struct TrayItems {
     pub compact: CheckMenuItem<tauri::Wry>,
+    pub provider_glmprox: CheckMenuItem<tauri::Wry>,
+    pub provider_zai: CheckMenuItem<tauri::Wry>,
     pub theme_dark: CheckMenuItem<tauri::Wry>,
     pub theme_light: CheckMenuItem<tauri::Wry>,
     pub theme_midnight: CheckMenuItem<tauri::Wry>,
@@ -25,6 +27,17 @@ pub fn create(app: &App) -> tauri::Result<TrayItems> {
 
     let compact = CheckMenuItem::with_id(
         app, "compact", "Mode Compact (tanpa garis)", true, false, None::<&str>,
+    )?;
+
+    let provider_glmprox =
+        CheckMenuItem::with_id(app, "provider-glmprox", "GLM Proxy (glmprox)", true, true, None::<&str>)?;
+    let provider_zai =
+        CheckMenuItem::with_id(app, "provider-zai", "Z.ai (API key)", true, false, None::<&str>)?;
+    let provider_menu = Submenu::with_items(
+        app,
+        "Provider",
+        true,
+        &[&provider_glmprox, &provider_zai],
     )?;
 
     let theme_dark = CheckMenuItem::with_id(app, "theme-dark", "Dark", true, true, None::<&str>)?;
@@ -47,7 +60,16 @@ pub fn create(app: &App) -> tauri::Result<TrayItems> {
 
     let menu = Menu::with_items(
         app,
-        &[&toggle, &refresh, &compact, &theme_menu, &reset_pos, &settings, &quit],
+        &[
+            &toggle,
+            &refresh,
+            &compact,
+            &provider_menu,
+            &theme_menu,
+            &reset_pos,
+            &settings,
+            &quit,
+        ],
     )?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -74,6 +96,8 @@ pub fn create(app: &App) -> tauri::Result<TrayItems> {
 
     Ok(TrayItems {
         compact,
+        provider_glmprox,
+        provider_zai,
         theme_dark,
         theme_light,
         theme_midnight,
@@ -108,6 +132,19 @@ fn menu_action(app: &AppHandle, id: &str) {
                 let _ = crate::config::save(&cfg);
                 let _ = handle.emit("ui://config", &cfg);
                 sync_checks(&handle, &st).await;
+            });
+        }
+        "provider-glmprox" | "provider-zai" => {
+            let id = id.trim_start_matches("provider-").to_string();
+            let st = app.state::<Arc<AppState>>().inner().clone();
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                st.config.write().await.provider = crate::config::normalize_provider(&id);
+                let cfg = st.config.read().await.clone();
+                let _ = crate::config::save(&cfg);
+                let _ = handle.emit("ui://config", &cfg);
+                sync_checks(&handle, &st).await;
+                crate::update_and_emit(&handle, &st).await;
             });
         }
         "theme-dark" | "theme-light" | "theme-midnight" | "theme-oled" => {
@@ -161,6 +198,12 @@ pub async fn sync_checks(_app: &AppHandle, state: &Arc<AppState>) {
     let guard = state.tray_items.lock().unwrap();
     let Some(items) = guard.as_ref() else { return };
     let _ = items.compact.set_checked(cfg.compact);
+    let _ = items
+        .provider_glmprox
+        .set_checked(crate::config::normalize_provider(&cfg.provider) == "glmprox");
+    let _ = items
+        .provider_zai
+        .set_checked(crate::config::normalize_provider(&cfg.provider) == "zai");
     let _ = items.theme_dark.set_checked(cfg.theme == "dark");
     let _ = items.theme_light.set_checked(cfg.theme == "light");
     let _ = items.theme_midnight.set_checked(cfg.theme == "midnight");
@@ -171,24 +214,43 @@ pub async fn update_tooltip(app: &AppHandle, state: &Arc<AppState>) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
     let snap = state.snapshot.read().await.clone();
     let text = match snap {
-        Some(s) if s.kind == "ok" && s.stats.is_some() => {
-            let stats = s.stats.unwrap();
-            match api::used_percent(&stats) {
-                Some(pct) => format!(
-                    "GLM {}: {:.0}% sisa · {} tok",
-                    stats.name,
-                    (100.0 - pct).max(0.0),
-                    stats
-                        .current_usage
-                        .as_ref()
-                        .map(|c| api::fmt_tokens(c.remaining_tokens))
-                        .unwrap_or_default()
-                ),
-                None => format!("GLM {}", stats.name),
+        Some(s) if s.kind == "ok" => {
+            if let Some(stats) = s.stats.as_ref() {
+                // glmprox: persen dari token used/limit.
+                match providers::glmprox::used_percent(stats) {
+                    Some(pct) => format!(
+                        "{} {}: {:.0}% sisa · {} tok",
+                        s.provider.short,
+                        stats.name,
+                        (100.0 - pct).max(0.0),
+                        stats
+                            .current_usage
+                            .as_ref()
+                            .map(|c| providers::glmprox::fmt_tokens(c.remaining_tokens))
+                            .unwrap_or_default()
+                    ),
+                    None => format!("{} {}", s.provider.short, stats.name),
+                }
+            } else if let Some(m) = s.meters.first() {
+                // Vendor meter-based (mis. Z.ai): meter pertama = sesi utama.
+                let sisa = (100.0 - m.used_percent).max(0.0);
+                match (m.used, m.limit) {
+                    (Some(u), Some(l)) => format!(
+                        "{} {}: {:.0}% sisa · {:.0}/{:.0}",
+                        s.provider.short, m.label, sisa, u, l
+                    ),
+                    _ => format!("{} {}: {:.0}% sisa", s.provider.short, m.label, sisa),
+                }
+            } else {
+                format!("{} memuat…", s.provider.short)
             }
         }
         Some(s) if s.kind == "limited" => {
-            format!("GLM limit — reset {}", s.window_ends_at.unwrap_or_else(|| "…".into()))
+            format!(
+                "{} limit — reset {}",
+                s.provider.short,
+                s.window_ends_at.unwrap_or_else(|| "…".into())
+            )
         }
         Some(s) => format!("glm-overflow offline: {}", s.message.unwrap_or_default()),
         None => "glm-overflow: memuat…".to_string(),

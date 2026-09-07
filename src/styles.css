@@ -346,6 +346,21 @@ body.compact #pill-reset {
   border-color: rgba(74, 222, 128, 0.6);
 }
 
+/* Grup kredensial per-provider (tampil sesuai select Provider). */
+.cfg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cfg-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
 .settings-row {
   display: flex;
   align-items: center;

@@ -24,17 +24,42 @@ interface Stats {
   total_lifetime_tokens: number;
 }
 
+interface ProviderInfo {
+  id: string;
+  name: string;
+  short: string;
+}
+
+/** Meter generik vendor non-glmprox (padanan `.progress` openusage). */
+interface Meter {
+  label: string;
+  /** 0..=100 — persen terpakai. */
+  used_percent: number;
+  used: number | null;
+  limit: number | null;
+  /** "percent" | "count" */
+  unit: string;
+  /** epoch ms reset berikutnya (null = vendor tidak kirim). */
+  resets_at_ms: number | null;
+  period_ms: number | null;
+}
+
 interface Snapshot {
   kind: "ok" | "limited" | "failed";
   fetched_at: number | null;
+  provider: ProviderInfo;
+  plan: string | null;
   stats: Stats | null;
+  meters: Meter[];
   message: string | null;
   window_ends_at: string | null;
 }
 
 interface Config {
+  provider: string;
   base_url: string;
   token: string;
+  zai_api_key: string;
   interval_secs: number;
   bar_visible: boolean;
   bar_x?: number | null;
@@ -127,6 +152,11 @@ function usageInfo(stats: Stats): { usedPct: number; remainingPct: number } | nu
   return { usedPct, remainingPct: 100 - usedPct };
 }
 
+/** Meter utama pill — mapper backend mengurutkan sesi sebagai meter pertama. */
+function primaryMeter(snap: Snapshot | null): Meter | null {
+  return snap?.meters?.[0] ?? null;
+}
+
 // ---------- Theme & compact ----------
 
 const THEMES = ["dark", "light", "midnight", "oled"];
@@ -154,6 +184,7 @@ function renderPill() {
 
 function renderPillInner() {
   pill.classList.remove("warn", "crit", "limited", "offline");
+  pillChip.textContent = snapshot?.provider?.short ?? "…";
 
   if (!snapshot) {
     pillPct.textContent = "memuat…";
@@ -164,17 +195,35 @@ function renderPillInner() {
     return;
   }
 
-  if (snapshot.kind === "ok" && snapshot.stats) {
+  if (snapshot.kind === "ok") {
     const stats = snapshot.stats;
-    pillChip.textContent = "GLM";
-    const info = usageInfo(stats);
-    if (info) {
-      pillFill.style.width = `${Math.min(100, Math.max(0, info.usedPct))}%`;
+    const meter = primaryMeter(snapshot);
+    if (stats) {
+      const info = usageInfo(stats);
+      if (info) {
+        pillFill.style.width = `${Math.min(100, Math.max(0, info.usedPct))}%`;
+        const suffix = document.body.classList.contains("compact") ? "" : " sisa";
+        pillPct.textContent = `${info.remainingPct.toFixed(0)}%${suffix}`;
+        if (info.remainingPct < 5) pill.classList.add("crit");
+        else if (info.remainingPct < 20) pill.classList.add("warn");
+        pillTok.textContent = `${fmtTok(stats.current_usage!.remaining_tokens)} tok`;
+      } else {
+        pillFill.style.width = "0%";
+        pillPct.textContent = "—";
+        pillTok.textContent = "";
+      }
+    } else if (meter) {
+      // Vendor meter-based (mis. Z.ai) — meter sesi jadi indikator pill.
+      const remaining = Math.max(0, 100 - meter.used_percent);
+      pillFill.style.width = `${Math.min(100, Math.max(0, meter.used_percent))}%`;
       const suffix = document.body.classList.contains("compact") ? "" : " sisa";
-      pillPct.textContent = `${info.remainingPct.toFixed(0)}%${suffix}`;
-      if (info.remainingPct < 5) pill.classList.add("crit");
-      else if (info.remainingPct < 20) pill.classList.add("warn");
-      pillTok.textContent = `${fmtTok(stats.current_usage!.remaining_tokens)} tok`;
+      pillPct.textContent = `${remaining.toFixed(0)}%${suffix}`;
+      if (remaining < 5) pill.classList.add("crit");
+      else if (remaining < 20) pill.classList.add("warn");
+      pillTok.textContent =
+        meter.unit === "count" && meter.limit != null
+          ? `${fmtInt(meter.used ?? 0)}/${fmtInt(meter.limit)}`
+          : "";
     } else {
       pillFill.style.width = "0%";
       pillPct.textContent = "—";
@@ -202,13 +251,17 @@ function renderPillInner() {
 }
 
 function renderResetSlot() {
-  const wea =
-    snapshot?.kind === "ok" && snapshot.stats?.current_usage
-      ? snapshot.stats.current_usage.window_ends_at
-      : snapshot?.kind === "limited"
-        ? snapshot.window_ends_at
-        : null;
-  const ms = msUntil(wea);
+  let ms: number | null = null;
+  if (snapshot?.kind === "ok") {
+    if (snapshot.stats?.current_usage) {
+      ms = msUntil(snapshot.stats.current_usage.window_ends_at);
+    } else {
+      const resets = primaryMeter(snapshot)?.resets_at_ms;
+      ms = resets != null ? resets - Date.now() : null;
+    }
+  } else if (snapshot?.kind === "limited") {
+    ms = msUntil(snapshot.window_ends_at);
+  }
   if (ms === null) {
     pillReset.textContent = "";
     return;
@@ -266,6 +319,37 @@ function renderPanelInner() {
     panelStatus.textContent = snapshot.fetched_at
       ? `Diperbarui ${toWIB(new Date(snapshot.fetched_at).toISOString())} · interval ${config?.interval_secs ?? "?"}s`
       : "";
+    return;
+  }
+
+  if (snapshot.kind === "ok" && snapshot.meters?.length) {
+    // Vendor meter-based (mis. Z.ai) — render meter generik + nama plan.
+    const rows: string[] = [];
+    if (snapshot.provider?.name) rows.push(row("Provider", escapeHtml(snapshot.provider.name)));
+    if (snapshot.plan) rows.push(row("Plan", escapeHtml(snapshot.plan)));
+    for (const m of snapshot.meters) {
+      const remaining = Math.max(0, 100 - m.used_percent);
+      const pctCls = remaining < 5 ? "crit" : remaining < 20 ? "warn" : "ok";
+      const detail =
+        m.unit === "count" && m.limit != null
+          ? `${fmtInt(m.used ?? 0)} / ${fmtInt(m.limit)} terpakai (${m.used_percent.toFixed(1)}%)`
+          : `${m.used_percent.toFixed(1)}% terpakai`;
+      const reset =
+        m.resets_at_ms != null
+          ? `${fmtCountdown(m.resets_at_ms - Date.now())} · ${toWIB(new Date(m.resets_at_ms).toISOString())}`
+          : "—";
+      rows.push(row(m.label, `${detail} · reset ${reset}`, pctCls));
+    }
+    panelRows.innerHTML = rows.join("");
+    panelStatus.textContent = snapshot.fetched_at
+      ? `Diperbarui ${toWIB(new Date(snapshot.fetched_at).toISOString())} · interval ${config?.interval_secs ?? "?"}s`
+      : "";
+    return;
+  }
+
+  if (snapshot.kind === "ok") {
+    panelRows.innerHTML = row("Status", "Belum ada data usage", "dim");
+    panelStatus.textContent = "Paket terdaftar tapi kuota belum tersedia. Coba refresh nanti.";
     return;
   }
 
@@ -366,21 +450,35 @@ $("btn-hide").addEventListener("click", async () => {
 
 // ---------- Settings form ----------
 
+function applyProviderGroupUI() {
+  const active = ($("cfg-provider") as HTMLSelectElement).value;
+  document.querySelectorAll<HTMLElement>(".cfg-group").forEach((el) => {
+    el.style.display = el.dataset.for === active ? "" : "none";
+  });
+}
+
 function loadSettingsForm() {
   if (!config) return;
+  ($("cfg-provider") as HTMLSelectElement).value = config.provider || "glmprox";
   ($("cfg-token") as HTMLInputElement).value = config.token;
   ($("cfg-base-url") as HTMLInputElement).value = config.base_url;
+  ($("cfg-zai-key") as HTMLInputElement).value = config.zai_api_key ?? "";
   ($("cfg-interval") as HTMLInputElement).value = String(config.interval_secs);
   ($("cfg-theme") as HTMLSelectElement).value =
     config.theme && THEMES.includes(config.theme) ? config.theme : "dark";
   ($("cfg-compact") as HTMLInputElement).checked = !!config.compact;
+  applyProviderGroupUI();
 }
+
+$("cfg-provider").addEventListener("change", applyProviderGroupUI);
 
 $("btn-save").addEventListener("click", async () => {
   const status = $("save-status");
   const newConfig: Config = {
+    provider: ($("cfg-provider") as HTMLSelectElement).value,
     token: ($("cfg-token") as HTMLInputElement).value.trim(),
     base_url: ($("cfg-base-url") as HTMLInputElement).value.trim(),
+    zai_api_key: ($("cfg-zai-key") as HTMLInputElement).value.trim(),
     interval_secs: Number(($("cfg-interval") as HTMLInputElement).value) || 60,
     theme: ($("cfg-theme") as HTMLSelectElement).value,
     compact: ($("cfg-compact") as HTMLInputElement).checked,

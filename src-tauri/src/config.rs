@@ -8,8 +8,12 @@ use std::{fs, path::PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Vendor aktif: "glmprox" | "zai" (lihat providers::ProviderKind).
+    pub provider: String,
     pub base_url: String,
     pub token: String,
+    /// API key untuk provider Z.ai (fallback env ZAI_API_KEY saat default).
+    pub zai_api_key: String,
     pub interval_secs: u64,
     pub bar_visible: bool,
     /// Posisi bar hasil drag (logical coords); None = default kanan-atas.
@@ -32,18 +36,30 @@ pub fn normalize_theme(theme: &str) -> String {
     }
 }
 
+/// ID vendor tak dikenal -> fallback "glmprox" (vendor default).
+pub fn normalize_provider(id: &str) -> String {
+    match id.trim().to_lowercase().as_str() {
+        "zai" | "z.ai" => "zai".to_string(),
+        _ => "glmprox".to_string(),
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
-        // Token tidak pernah disimpan di source code (repo ini publik).
-        // Isi lewat env GLM_OVERFLOW_TOKEN atau lewat Settings di app
-        // (tersimpan di config.json lokal, di luar repo).
-        let token = std::env::var("GLM_OVERFLOW_TOKEN")
-            .ok()
-            .filter(|t| !t.trim().is_empty())
-            .unwrap_or_default();
+        // Kredensial tidak pernah disimpan di source code (repo ini publik).
+        // Isi lewat env atau lewat Settings di app (tersimpan di config.json
+        // lokal, di luar repo).
+        let env_or_empty = |key: &str| {
+            std::env::var(key)
+                .ok()
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_default()
+        };
         Self {
+            provider: "glmprox".to_string(),
             base_url: "https://glm.ajianaz.dev".to_string(),
-            token,
+            token: env_or_empty("GLM_OVERFLOW_TOKEN"),
+            zai_api_key: env_or_empty("ZAI_API_KEY"),
             interval_secs: 60,
             bar_visible: true,
             bar_x: None,
