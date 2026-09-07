@@ -1,10 +1,11 @@
-//! glm-overflow — GLM coding plan usage bar.
-//! Pill overlay always-on-top + tray. Polling `/stats` sesuai interval config.
+//! glm-overflow — multi-vendor usage bar (GLM coding plan).
+//! Pill overlay always-on-top + tray. Polling sesuai interval config via
+//! provider aktif (glmprox / Z.ai).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod api;
 mod config;
+mod providers;
 mod tray;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,7 +21,7 @@ const PANEL_H: f64 = 400.0;
 
 pub struct AppState {
     pub config: RwLock<config::Config>,
-    pub snapshot: RwLock<Option<api::Snapshot>>,
+    pub snapshot: RwLock<Option<providers::Snapshot>>,
     /// Posisi bar hasil drag yang menunggu disimpan (logical coords).
     pub pending_pos: Mutex<Option<(f64, f64)>>,
     /// Generation counter untuk debounce penyimpanan posisi.
@@ -122,12 +123,12 @@ async fn apply_bar_visibility(app: &AppHandle, state: &Arc<AppState>) {
     }
 }
 
-pub async fn update_and_emit(app: &AppHandle, state: &Arc<AppState>) -> api::Snapshot {
-    let (base, token) = {
-        let c = state.config.read().await;
-        (c.base_url.clone(), c.token.clone())
-    };
-    let snap = api::fetch_snapshot(&base, &token).await;
+pub async fn update_and_emit(app: &AppHandle, state: &Arc<AppState>) -> providers::Snapshot {
+    // Clone config dulu — jangan pegang guard RwLock lintas await fetch.
+    let cfg = state.config.read().await.clone();
+    let snap = providers::ProviderKind::from_id(&cfg.provider)
+        .fetch(&cfg)
+        .await;
     *state.snapshot.write().await = Some(snap.clone());
     let _ = app.emit("stats://update", &snap);
     tray::update_tooltip(app, state).await;
@@ -155,7 +156,10 @@ async fn get_state(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value,
 }
 
 #[tauri::command]
-async fn refresh_now(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<api::Snapshot, String> {
+async fn refresh_now(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<providers::Snapshot, String> {
     let st = state.inner().clone();
     Ok(update_and_emit(&app, &st).await)
 }
@@ -170,9 +174,14 @@ async fn save_config(
     let visibility_changed;
     {
         let mut cfg = st.config.write().await;
+        cfg.provider = config::normalize_provider(&new_config.provider);
         cfg.base_url = new_config.base_url.trim().trim_end_matches('/').to_string();
         if !new_config.token.trim().is_empty() {
             cfg.token = new_config.token.trim().to_string();
+        }
+        // Aturan sama seperti token: isi kosong = pertahankan nilai lama.
+        if !new_config.zai_api_key.trim().is_empty() {
+            cfg.zai_api_key = new_config.zai_api_key.trim().to_string();
         }
         cfg.interval_secs = new_config.interval_secs.clamp(10, 3600);
         cfg.compact = new_config.compact;

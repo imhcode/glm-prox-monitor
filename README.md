@@ -1,7 +1,8 @@
 # glm-overflow
 
 Bar stat pemakaian langganan GLM coding plan — pill overlay kecil yang selalu tampil
-di kanan-atas layar (always-on-top, tanpa taskbar) + tray icon. Dibangun dengan
+di kanan-atas layar (always-on-top, tanpa taskbar) + tray icon. **Multi-provider**:
+pakai proxy glmprox atau langsung ke API Z.ai. Dibangun dengan
 **Tauri 2** (Rust backend, UI vanilla TS/CSS, binary ringan).
 
 ## Download
@@ -10,9 +11,9 @@ Ambil installer dari [**Releases**](https://github.com/imhcode/glm-prox-monitor/
 
 | Platform | File |
 | --- | --- |
-| Windows | `glm-overflow_0.2.1_x64-setup.exe` (NSIS, instalasi per-user) |
-| Linux (Debian/Ubuntu) | `glm-overflow_0.2.1_amd64.deb` |
-| Linux (universal) | `glm-overflow_0.2.1_amd64.AppImage` |
+| Windows | `glm-overflow_0.3.0_x64-setup.exe` (NSIS, instalasi per-user) |
+| Linux (Debian/Ubuntu) | `glm-overflow_0.3.0_amd64.deb` |
+| Linux (universal) | `glm-overflow_0.3.0_amd64.AppImage` |
 
 > Installer belum di-code-sign → SmartScreen/antivirus bisa menampilkan peringatan
 > pertama kali dijalankan. Data pada screenshot di bawah adalah data dummy.
@@ -29,13 +30,17 @@ Ambil installer dari [**Releases**](https://github.com/imhcode/glm-prox-monitor/
 
 ## Fitur
 
+- **Multi-provider**: pilih vendor di Settings atau tray —
+  [glmprox](docs/providers/glmprox.md) (proxy GLM, default) atau
+  [Z.ai langsung](docs/providers/zai.md) (API key, tanpa proxy).
 - **Pill bar**: progress pemakaian window 5 jam, **% sisa**, **sisa token**, dan countdown reset.
   - hijau (aman) → amber (<20% sisa) → merah (<5% sisa / kena limit)
-- **Panel detail** (klik pill): nama, model, sisa token, window mulai/berakhir, total
+- **Panel detail** (klik pill): rincian langganan per provider — nama, model/plan,
+  meter sesi & mingguan (Z.ai), sisa token, window mulai/berakhir, total
   request/token, last used, expiry langganan, key — semua waktu ditampilkan **WIB**.
 - **Tray icon**: tooltip berisi ringkasan; klik kiri toggle bar; menu Show/Hide · Refresh Now ·
-  Settings · Quit.
-- **Settings** (di panel): token, base URL, interval refresh (10–3600 detik).
+  Provider · Theme · Settings · Quit.
+- **Settings** (di panel): provider, kredensial per-provider, interval refresh (10–3600 detik).
 - **State otomatis**: rate-limited (hitung mundur dari `error.window_ends_at`), offline
   (retry tiap interval).
 - Konfigurasi tersimpan di:
@@ -61,13 +66,19 @@ menangani Linux secara khusus:
     — tapi native Wayland umumnya **tidak bisa** always-on-top. Alternatif di KDE:
     pasang Window Rule *Keep above* untuk window `glm-overflow`.
 
-## Endpoint
+## Provider
 
-`GET {base_url}/stats` dengan header `Authorization: Bearer <token>`.
-Default `base_url`: `https://glm.ajianaz.dev`. Field utama yang dipakai:
-`token_limit_per_5h`, `current_usage.tokens_used_in_current_window`,
-`current_usage.remaining_tokens`, `current_usage.window_ends_at`, `expiry_date`,
-`last_used`, `is_expired`, `total_requests`, `total_lifetime_tokens`.
+glm-overflow mendukung beberapa sumber data usage; pilih lewat Settings atau tray
+(submenu *Provider*):
+
+| Provider | Kredensial | Sumber data | Dokumen |
+| --- | --- | --- | --- |
+| **glmprox** (default) | Token proxy + base URL | `GET {base_url}/stats` milik [glm-prox-monitor](https://github.com/imhcode/glm-prox-monitor) | [docs/providers/glmprox.md](docs/providers/glmprox.md) |
+| **Z.ai** | API key Z.ai | `api.z.ai` — meter sesi 5 jam, mingguan, web search | [docs/providers/zai.md](docs/providers/zai.md) |
+
+Detail kredensial, endpoint, dan arti tiap state error ada di dokumen masing-masing
+provider. Menambah vendor baru cukup dengan satu modul di
+`src-tauri/src/providers/` (pola `ProviderRuntime` ala [openusage](https://github.com/robinebers/openusage)).
 
 ## Development
 
@@ -85,7 +96,7 @@ npm run tauri build    # produksi + installer
 
 Hasil build:
 
-- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.2.1_x64-setup.exe`
+- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.3.0_x64-setup.exe`
 - Linux: `bundle/deb/*.deb` dan `bundle/appimage/*.AppImage`
 
 ## Release CI
@@ -97,8 +108,9 @@ otomatis).
 
 ## Catatan keamanan
 
-- **Token tidak pernah disimpan di source code.** Set token lewat **Settings** di app
-  (tersimpan di `config.json` lokal, di luar repo) atau env `GLM_OVERFLOW_TOKEN`
-  sebelum first-run. Tanpa token, app tetap jalan dengan state offline.
+- **Kredensial tidak pernah disimpan di source code.** Set token/API key lewat
+  **Settings** di app (tersimpan di `config.json` lokal, di luar repo) atau env
+  (`GLM_OVERFLOW_TOKEN` untuk glmprox, `ZAI_API_KEY` untuk Z.ai) sebelum first-run.
+  Tanpa kredensial, app tetap jalan dengan state offline.
 - Installer belum di-code-sign → SmartScreen/antivirus bisa menampilkan peringatan
   pertama kali dijalankan.

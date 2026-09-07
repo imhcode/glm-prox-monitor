@@ -1,3 +1,4 @@
+//! Provider `glmprox` — proxy GLM coding plan (default vendor).
 //! Fetch + parse response endpoint `/stats`.
 //!
 //! Schema sukses (terverifikasi dari API):
@@ -12,6 +13,9 @@
 //! Response error (rate limit) punya bentuk { "error": { ..., "window_ends_at": ... } }.
 
 use serde::{Deserialize, Serialize};
+
+use super::{ProviderKind, Snapshot};
+use crate::config::Config;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CurrentUsage {
@@ -52,38 +56,6 @@ pub struct Stats {
     pub total_lifetime_tokens: u64,
 }
 
-/// Kondisi terakhir pemakaian — dikirim ke frontend lewat event `stats://update`.
-#[derive(Debug, Clone, Serialize)]
-pub struct Snapshot {
-    /// "ok" | "limited" | "failed"
-    pub kind: String,
-    /// unix epoch millis saat data diambil (null = belum pernah)
-    pub fetched_at: Option<u64>,
-    pub stats: Option<Stats>,
-    pub message: Option<String>,
-    /// ISO timestamp reset window (dari error.window_ends_at saat rate-limited)
-    pub window_ends_at: Option<String>,
-}
-
-fn now_millis() -> Option<u64> {
-    Some(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?
-            .as_millis() as u64,
-    )
-}
-
-fn snapshot(kind: &str, stats: Option<Stats>, message: Option<String>, window_ends_at: Option<String>) -> Snapshot {
-    Snapshot {
-        kind: kind.to_string(),
-        fetched_at: now_millis(),
-        stats,
-        message,
-        window_ends_at,
-    }
-}
-
 pub fn used_percent(stats: &Stats) -> Option<f64> {
     let cu = stats.current_usage.as_ref()?;
     if stats.token_limit == 0 {
@@ -104,21 +76,18 @@ pub fn fmt_tokens(n: u64) -> String {
     }
 }
 
-pub async fn fetch_snapshot(base_url: &str, token: &str) -> Snapshot {
-    let url = format!("{}/stats", base_url.trim_end_matches('/'));
+pub async fn fetch(cfg: &Config) -> Snapshot {
+    let info = ProviderKind::GlmProx.info();
+    let url = format!("{}/stats", cfg.base_url.trim_end_matches('/'));
 
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .user_agent("glm-overflow/0.1")
-        .build()
-    {
+    let client = match super::http_client() {
         Ok(c) => c,
-        Err(e) => return snapshot("failed", None, Some(format!("client: {e}")), None),
+        Err(e) => return Snapshot::failed(info, e),
     };
 
-    let resp = match client.get(&url).bearer_auth(token).send().await {
+    let resp = match client.get(&url).bearer_auth(&cfg.token).send().await {
         Ok(r) => r,
-        Err(e) => return snapshot("failed", None, Some(format!("jaringan: {e}")), None),
+        Err(e) => return Snapshot::failed(info, format!("jaringan: {e}")),
     };
 
     let status = resp.status();
@@ -132,19 +101,76 @@ pub async fn fetch_snapshot(base_url: &str, token: &str) -> Snapshot {
             .and_then(|m| m.as_str())
             .unwrap_or("error dari API")
             .to_string();
-        let wea = err
+        let mut snap = Snapshot::new(info, "limited");
+        snap.message = Some(msg);
+        snap.window_ends_at = err
             .get("window_ends_at")
             .and_then(|w| w.as_str())
             .map(|s| s.to_string());
-        return snapshot("limited", None, Some(msg), wea);
+        return snap;
     }
 
     if !status.is_success() {
-        return snapshot("failed", None, Some(format!("HTTP {status}")), None);
+        return Snapshot::failed(info, format!("HTTP {status}"));
     }
 
     match serde_json::from_value::<Stats>(value) {
-        Ok(s) => snapshot("ok", Some(s), None, None),
-        Err(e) => snapshot("failed", None, Some(format!("parse: {e}")), None),
+        Ok(s) => {
+            let mut snap = Snapshot::new(info, "ok");
+            snap.stats = Some(s);
+            snap
+        }
+        Err(e) => Snapshot::failed(info, format!("parse: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_upstream_alias_fields() {
+        let raw = r#"{
+            "key": "glm_abc", "name": "utama", "model": "glm-5.3-flash",
+            "token_limit_per_5h": 20000000,
+            "current_usage": {
+                "tokens_used_in_current_window": 123,
+                "window_started_at": "2026-01-01T00:00:00Z",
+                "window_ends_at": "2026-01-01T05:00:00Z",
+                "remaining_tokens": 42
+            },
+            "total_requests": 7, "total_lifetime_tokens": 999
+        }"#;
+        let s: Stats = serde_json::from_str(raw).unwrap();
+        assert_eq!(s.token_limit, 20_000_000);
+        let cu = s.current_usage.unwrap();
+        assert_eq!(cu.tokens_used, 123);
+        assert_eq!(cu.remaining_tokens, 42);
+        assert_eq!(cu.window_ends_at, "2026-01-01T05:00:00Z");
+    }
+
+    #[test]
+    fn used_percent_math() {
+        let s = Stats {
+            token_limit: 200,
+            current_usage: Some(CurrentUsage {
+                tokens_used: 50,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let pct = used_percent(&s).unwrap();
+        assert!((pct - 25.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn used_percent_none_without_usage_or_limit() {
+        assert!(used_percent(&Stats::default()).is_none());
+        let s = Stats {
+            token_limit: 0,
+            current_usage: Some(CurrentUsage::default()),
+            ..Default::default()
+        };
+        assert!(used_percent(&s).is_none());
     }
 }

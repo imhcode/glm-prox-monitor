@@ -10,7 +10,7 @@
     <div id="root">
       <!-- Pill bar: selalu tampil di top layar; bisa didrag -->
       <div id="pill" data-tauri-drag-region title="Klik: detail · Drag: pindahkan">
-        <span id="pill-chip">GLM</span>
+        <span id="pill-chip">…</span>
         <div id="pill-bar"><div id="pill-fill"></div></div>
         <span id="pill-pct">…</span>
         <span id="pill-tok"></span>
@@ -33,13 +33,32 @@
           <summary>⚙ Settings</summary>
           <div class="settings-body">
             <label>
-              <span>API Token</span>
-              <input id="cfg-token" type="password" autocomplete="off" spellcheck="false" />
+              <span>Provider</span>
+              <select id="cfg-provider">
+                <option value="glmprox">GLM Proxy (glmprox)</option>
+                <option value="zai">Z.ai (API key langsung)</option>
+              </select>
             </label>
-            <label>
-              <span>Base URL</span>
-              <input id="cfg-base-url" type="text" spellcheck="false" />
-            </label>
+            <div class="cfg-group" data-for="glmprox">
+              <label>
+                <span>API Token</span>
+                <input id="cfg-token" type="password" autocomplete="off" spellcheck="false" />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input id="cfg-base-url" type="text" spellcheck="false" />
+              </label>
+            </div>
+            <div class="cfg-group" data-for="zai">
+              <label>
+                <span>API Key Z.ai</span>
+                <input id="cfg-zai-key" type="password" autocomplete="off" spellcheck="false" />
+              </label>
+              <p class="cfg-hint">
+                Ambil API key di console Z.ai (z.ai → API Keys), butuh langganan
+                GLM Coding aktif. Alternatif: env ZAI_API_KEY.
+              </p>
+            </div>
             <label>
               <span>Interval refresh (detik)</span>
               <input id="cfg-interval" type="number" min="10" max="3600" step="10" />
