@@ -7,6 +7,7 @@
 mod config;
 mod providers;
 mod tray;
+mod updater;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,9 @@ pub struct AppState {
     pub pos_gen: AtomicU64,
     /// Item tray yang punya state check (theme/compact).
     pub tray_items: Mutex<Option<tray::TrayItems>>,
+    /// Hasil Cek Update terakhir — dipakai install_update agar tidak
+    /// memanggil API GitHub dua kali.
+    pub pending_update: RwLock<Option<updater::UpdateInfo>>,
 }
 
 fn collapsed_size(compact: bool) -> LogicalSize<f64> {
@@ -262,6 +266,36 @@ async fn hide_bar(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(),
     Ok(())
 }
 
+#[tauri::command]
+fn app_version() -> String {
+    updater::current_version().to_string()
+}
+
+#[tauri::command]
+async fn check_update(state: State<'_, Arc<AppState>>) -> Result<updater::UpdateInfo, String> {
+    let info = updater::check().await;
+    *state.inner().pending_update.write().await = Some(info.clone());
+    Ok(info)
+}
+
+#[tauri::command]
+async fn install_update(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let info = state
+        .inner()
+        .pending_update
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| "Jalankan Cek Update dulu.".to_string())?;
+    if !info.update_available {
+        return Ok(()); // Tidak ada yang dipasang — frontend tidak semestinya sampai sini.
+    }
+    updater::install(&app, &info).await
+}
+
 fn main() {
     #[cfg(target_os = "linux")]
     prepare_linux_backend();
@@ -273,6 +307,7 @@ fn main() {
         pending_pos: Mutex::new(None),
         pos_gen: AtomicU64::new(0),
         tray_items: Mutex::new(None),
+        pending_update: RwLock::new(None),
     });
 
     tauri::Builder::default()
@@ -286,7 +321,10 @@ fn main() {
             set_theme,
             reset_bar_position,
             start_bar_drag,
-            hide_bar
+            hide_bar,
+            app_version,
+            check_update,
+            install_update
         ])
         .setup(move |app| {
             let items = tray::create(app)?;

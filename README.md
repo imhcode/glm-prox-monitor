@@ -11,9 +11,9 @@ Ambil installer dari [**Releases**](https://github.com/imhcode/glm-prox-monitor/
 
 | Platform | File |
 | --- | --- |
-| Windows | `glm-overflow_0.3.0_x64-setup.exe` (NSIS, instalasi per-user) |
-| Linux (Debian/Ubuntu) | `glm-overflow_0.3.0_amd64.deb` |
-| Linux (universal) | `glm-overflow_0.3.0_amd64.AppImage` |
+| Windows | `glm-overflow_0.4.0_x64-setup.exe` (NSIS, instalasi per-user) |
+| Linux (Debian/Ubuntu) | `glm-overflow_0.4.0_amd64.deb` |
+| Linux (universal) | `glm-overflow_0.4.0_amd64.AppImage` |
 
 > Installer belum di-code-sign → SmartScreen/antivirus bisa menampilkan peringatan
 > pertama kali dijalankan. Data pada screenshot di bawah adalah data dummy.
@@ -39,7 +39,10 @@ Ambil installer dari [**Releases**](https://github.com/imhcode/glm-prox-monitor/
   meter sesi & mingguan (Z.ai), sisa token, window mulai/berakhir, total
   request/token, last used, expiry langganan, key — semua waktu ditampilkan **WIB**.
 - **Tray icon**: tooltip berisi ringkasan; klik kiri toggle bar; menu Show/Hide · Refresh Now ·
-  Provider · Theme · Settings · Quit.
+  Provider · Theme · Settings · Cek Update · Quit.
+- **Cek Update & auto-update**: tombol di panel (atau menu tray) memeriksa release terbaru
+  di GitHub; kalau ada versi baru, installer diunduh, dipasang senyap, dan app restart
+  sendiri ke versi baru (Windows). Di Linux, halaman release dibuka untuk unduh manual.
 - **Settings** (di panel): provider, kredensial per-provider, interval refresh (10–3600 detik).
 - **State otomatis**: rate-limited (hitung mundur dari `error.window_ends_at`), offline
   (retry tiap interval).
@@ -96,7 +99,7 @@ npm run tauri build    # produksi + installer
 
 Hasil build:
 
-- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.3.0_x64-setup.exe`
+- Windows: `src-tauri/target/release/bundle/nsis/glm-overflow_0.4.0_x64-setup.exe`
 - Linux: `bundle/deb/*.deb` dan `bundle/appimage/*.AppImage`
 
 ## Release CI

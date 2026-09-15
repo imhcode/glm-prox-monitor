@@ -56,6 +56,8 @@ pub fn create(app: &App) -> tauri::Result<TrayItems> {
 
     let reset_pos = MenuItem::with_id(app, "reset-pos", "Reset Posisi Bar", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+    let check_update =
+        MenuItem::with_id(app, "check-update", "Cek Update", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit glm-overflow", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -68,6 +70,7 @@ pub fn create(app: &App) -> tauri::Result<TrayItems> {
             &theme_menu,
             &reset_pos,
             &settings,
+            &check_update,
             &quit,
         ],
     )?;
@@ -172,6 +175,24 @@ fn menu_action(app: &AppHandle, id: &str) {
                 let _ = win.set_focus();
             }
             let _ = app.emit("ui://open-settings", ());
+        }
+        "check-update" => {
+            let st = app.state::<Arc<AppState>>().inner().clone();
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let info = crate::updater::check().await;
+                *st.pending_update.write().await = Some(info.clone());
+                let _ = handle.emit("update://checked", &info);
+                if info.update_available {
+                    // Tampilkan panel supaya progress unduh terlihat.
+                    if let Some(win) = handle.get_webview_window("bar") {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                    let _ = handle.emit("ui://open-update", ());
+                    let _ = crate::updater::install(&handle, &info).await;
+                }
+            });
         }
         "quit" => app.exit(0),
         _ => {}

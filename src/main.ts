@@ -68,6 +68,25 @@ interface Config {
   theme: string;
 }
 
+/** Mirror updater::UpdateInfo (Rust). */
+interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  update_available: boolean;
+  asset_url: string | null;
+  asset_name: string | null;
+  html_url: string;
+  message: string | null;
+}
+
+/** Mirror event update://progress. */
+interface UpdateProgress {
+  stage: "download" | "install" | "error" | "manual";
+  downloaded: number;
+  total: number;
+  message: string | null;
+}
+
 // ---------- Helpers ----------
 
 /** Padanan Convert-ToWIB: ISO -> "yyyy-MM-dd HH:mm:ss WIB" */
@@ -497,6 +516,49 @@ $("btn-save").addEventListener("click", async () => {
   }
 });
 
+// ---------- Cek Update & auto-install ----------
+
+const btnUpdate = $("btn-update") as HTMLButtonElement;
+const updateStatus = $("update-status");
+
+function setUpdateIdle(msg: string) {
+  updateStatus.textContent = msg;
+  btnUpdate.disabled = false;
+}
+
+/** Update ditemukan → langsung unduh & pasang tanpa konfirmasi. */
+async function startInstall(info: UpdateInfo) {
+  updateStatus.textContent = `Mengunduh v${info.latest}…`;
+  try {
+    // Di Windows sukses berarti app exit & restart — return berarti fallback manual.
+    await invoke("install_update");
+  } catch (e) {
+    setUpdateIdle(`Gagal: ${e}`);
+  }
+}
+
+function handleCheckResult(info: UpdateInfo) {
+  if (!info.latest) {
+    setUpdateIdle(`Gagal: ${info.message ?? "tidak diketahui"}`);
+    return;
+  }
+  if (!info.update_available) {
+    setUpdateIdle(`Sudah versi terbaru (v${info.current})`);
+    return;
+  }
+  void startInstall(info);
+}
+
+btnUpdate.addEventListener("click", async () => {
+  btnUpdate.disabled = true;
+  updateStatus.textContent = "Memeriksa…";
+  try {
+    handleCheckResult(await invoke<UpdateInfo>("check_update"));
+  } catch (e) {
+    setUpdateIdle(`Gagal: ${e}`);
+  }
+});
+
 // ---------- Events dari backend ----------
 
 listen<Snapshot>("stats://update", (ev) => {
@@ -518,6 +580,29 @@ listen<Config>("ui://config", (ev) => {
   void setExpanded(expanded); // resink ukuran window dengan mode aktif
 });
 
+// Progress unduh/pasang update (dari tombol panel maupun tray).
+listen<UpdateProgress>("update://progress", (ev) => {
+  const p = ev.payload;
+  if (p.stage === "download") {
+    const pct = p.total > 0 ? Math.round((p.downloaded / p.total) * 100) : 0;
+    updateStatus.textContent = `Mengunduh… ${pct}%`;
+  } else if (p.stage === "install") {
+    updateStatus.textContent = "Memasang… app akan restart sendiri.";
+  } else if (p.stage === "error") {
+    setUpdateIdle(`Gagal: ${p.message ?? "tidak diketahui"}`);
+  } else {
+    setUpdateIdle(p.message ?? "");
+  }
+});
+
+// Hasil cek yang dipicu dari tray (tombol panel memakai return invoke) —
+// jangan dua-duanya, biar tidak double-install.
+listen<UpdateInfo>("update://checked", (ev) => handleCheckResult(ev.payload));
+
+listen("ui://open-update", () => {
+  if (!expanded) setExpanded(true);
+});
+
 // ---------- Init ----------
 
 async function init() {
@@ -531,6 +616,13 @@ async function init() {
   applyBodyClasses();
   loadSettingsForm();
   renderAll();
+
+  // Label versi awal di baris Cek Update.
+  try {
+    updateStatus.textContent = `v${await invoke<string>("app_version")}`;
+  } catch (e) {
+    console.error("app_version failed", e);
+  }
 
   // countdown tiap detik cukup update slot reset + baris panel
   setInterval(() => {

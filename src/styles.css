@@ -389,8 +389,29 @@ body.compact #pill-reset {
   background: var(--btn-bg-hover);
 }
 
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .panel-actions {
   margin-top: 12px;
   display: flex;
   gap: 8px;
+}
+
+.update-row {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#update-status {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
